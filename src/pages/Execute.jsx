@@ -6,6 +6,7 @@ import { ArrowUp, ArrowDown, Sparkles, ChevronDown, ExternalLink, Check, Zap, Ar
 // Import API service when ready to implement real API calls
 // import api from '@/services/api';
 import razorpayService from '@/services/razorpay';
+import transactionService from '../services/transactionServices';
 
 // Tooltip component for financial terms
 const Tooltip = ({ children, content }) => {
@@ -219,106 +220,56 @@ function Execute() {
     return explanations[term] || 'No explanation available';
   };
 
-  const handleExecute = () => {
+  const handleExecute = async () => {
     if (!selectedAsset || !amount) return;
     
     setIsProcessing(true);
     
-    // Create transaction data
-    const transactionData = {
-      assetId: selectedAsset.id,
-      assetType: selectedAsset.type,
-      amount: parseFloat(amount),
-      transactionType, // 'buy' or 'sell'
-      installmentType,  // 'oneTime' or 'sip'
-      timestamp: new Date().toISOString()
-    };
-    
-    // For demo purposes, we'll determine API endpoint but simulate call
-    let apiEndpoint;
-    if (selectedAsset.type === 'mf') {
-      apiEndpoint = transactionType === 'buy' ? 'mutualFunds.buy' : 'mutualFunds.sell';
-    } else {
-      apiEndpoint = transactionType === 'buy' ? 'stocks.buy' : 'stocks.sell';
-    }
-    console.log(`Would call API endpoint: ${apiEndpoint}`);
-    
-    // Only initiate payment for buy transactions
-    if (transactionType === 'buy') {
-      // Convert amount to paise (smallest currency unit for INR)
-      const amountInPaise = Math.round(parseFloat(amount) * 100);
-      
-      // Razorpay payment options
-      const options = {
-        amount: amountInPaise,
-        currency: 'INR',
-        name: 'ABCD Finance',
-        description: `${selectedAsset.type === 'mf' ? 'Mutual Fund' : 'Stock'} Investment`,
-        notes: {
-          assetId: selectedAsset.id.toString(),
-          assetName: selectedAsset.name,
-          assetType: selectedAsset.type,
-          transactionType,
-          installmentType
-        },
-        prefill: {
-          name: 'Investor Name',
-          email: 'investor@example.com',
-          contact: '9876543210'
-        },
-        handler: function(response) {
-          console.log('Payment successful:', response);
-          // Here you would typically make an API call to your backend to verify payment
-          // and complete the transaction
-          
-          // For demo, we'll simulate success
-          setIsProcessing(false);
-          setIsSuccess(true);
-          
-          // Reset after showing success message
-          setTimeout(() => {
-            setIsSuccess(false);
-            setAmount('');
-            // Optionally navigate back to dashboard
-            // navigate('/');
-          }, 3000);
-        },
-        modal: {
-          ondismiss: function() {
-            console.log('Payment modal dismissed');
-            setIsProcessing(false);
-            alert('Payment cancelled');
-          },
-          escape: true,
-          backdropclose: false
-        }
+    try {
+      // Create transaction data
+      const transactionData = {
+        assetId: selectedAsset.id,
+        assetName: selectedAsset.name,
+        assetSymbol: selectedAsset.symbol || selectedAsset.schemeCode,
+        assetType: selectedAsset.type,
+        transactionType, // 'buy' or 'sell'
+        quantity: parseFloat(amount),
+        amount: parseFloat(amount) * (selectedAsset.price || selectedAsset.nav),
+        price: selectedAsset.price || selectedAsset.nav,
+        platform: selectedAsset.platform || 'default',
+        installmentType, // 'oneTime' or 'sip'
+        status: 'completed',
+        notes: `${transactionType === 'buy' ? 'Purchased' : 'Sold'} ${amount} ${selectedAsset.type === 'mf' ? 'units' : 'shares'} of ${selectedAsset.name}`
       };
       
-      // Initiate Razorpay payment
-      razorpayService.initiatePayment(options)
-        .then(response => {
-          console.log('Payment response:', response);
-          // Handler function above will handle success
-        })
-        .catch(error => {
-          console.error('Payment error:', error);
-          setIsProcessing(false);
-          alert(`Payment failed: ${error.message || 'Unknown error'}`);
-        });
-    } else {
-      // For sell transactions, no payment is needed
-      // For demo purposes, we'll simulate the API call
-      setTimeout(() => {
-        console.log('Transaction data:', transactionData);
-        setIsProcessing(false);
-        setIsSuccess(true);
-        
-        // Reset after showing success message
+      // For demo purposes, we'll determine API endpoint but simulate call
+      let apiEndpoint;
+      if (selectedAsset.type === 'mf') {
+        apiEndpoint = transactionType === 'buy' ? 'mutualFunds.buy' : 'mutualFunds.sell';
+      } else {
+        apiEndpoint = transactionType === 'buy' ? 'stocks.buy' : 'stocks.sell';
+      }
+      console.log(`Would call API endpoint: ${apiEndpoint}`);
+      
+      // Record the transaction in Firestore
+      await transactionService.recordTransaction(transactionData);
+      
+      // Only initiate payment for buy transactions
+      if (transactionType === 'buy') {
+        // Simulate payment process
         setTimeout(() => {
-          setIsSuccess(false);
-          setAmount('');
-        }, 3000);
-      }, 1500);
+          setIsSuccess(true);
+          setIsProcessing(false);
+        }, 2000);
+      } else {
+        // For sell transactions, just show success
+        setIsSuccess(true);
+        setIsProcessing(false);
+      }
+    } catch (error) {
+      console.error('Transaction failed:', error);
+      setIsProcessing(false);
+      // Show error toast or message
     }
   };
 
